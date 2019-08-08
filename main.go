@@ -19,7 +19,6 @@ func isHidden(filename string) (bool, error) {
 
 func printTokens(total int, token rune, name string) {
 	for i := total; i < total; i++ {
-		fmt.Println("entrou aqui")
 		fmt.Printf("%c", token)
 	}
 	fmt.Printf("%s\n", name)
@@ -81,15 +80,40 @@ func printFilesNames(files []os.FileInfo) {
 	}
 }
 
+func fillGraph(root string) Graph {
+	var graph Graph
+	var dirCount int
+
+	files, err := ioutil.ReadDir(root)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(root)
+	for _, file := range files {
+		hidden, _ := isHidden(file.Name())
+		if file.IsDir() {
+			dirCount++
+			node := CreateNode(file, 1, hidden)
+			graph.PushBack(node)
+		}
+		if !hidden {
+			token := '-'
+			fmt.Printf("%c%s\n", token, file.Name())
+		}
+	}
+
+	return graph
+}
+
 func main() {
 	root, err := os.Getwd()
 	if err != nil {
 		log.Fatal(err)
 	}
-	var roots []string
-	roots = append(roots, root)
 
-	normalFiles, _ := getFiles(root)
-	printTree(root, normalFiles, 1)
+	graph := fillGraph(root)
+
+	fmt.Println(graph)
 
 }
