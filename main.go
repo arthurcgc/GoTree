@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // regex function to check if given file is hidden
@@ -22,7 +23,14 @@ func printTokens(level int, token rune) {
 	}
 }
 
-func readFiles(filepath string, level int, argMap map[string]bool) {
+func readFiles(filepath string, level int, argMap map[string]bool, timeLimit time.Time) {
+	elapsed := time.Now()
+	if !timeLimit.IsZero() {
+		if elapsed.After(timeLimit) {
+			fmt.Println("Time Limit Exceeded")
+			return
+		}
+	}
 	files, err := ioutil.ReadDir(filepath)
 	if err != nil {
 		panic(err)
@@ -46,7 +54,7 @@ func readFiles(filepath string, level int, argMap map[string]bool) {
 			strs = append(strs, filepath)
 			strs = append(strs, file.Name())
 			fp := strings.Join(strs, "/")
-			readFiles(fp, level+1, argMap)
+			readFiles(fp, level+1, argMap, timeLimit)
 		}
 	}
 }
@@ -108,17 +116,31 @@ func validateArgs(args []string) (map[string]bool, error) {
 }
 
 func main() {
-	// start := time.Now()
 	root := getRoot()
 	args := getArgs(os.Args)
 	argMap, err := validateArgs(args)
+	var dummyTime time.Time
 	if err != nil {
 		panic(err)
 	}
-
 	if args == nil {
-		readFiles(root, 0, nil)
+
+		readFiles(root, 0, nil, dummyTime)
 	} else {
-		readFiles(root, 0, argMap)
+		existTime, _ := argMap["-time"]
+		if existTime {
+			fmt.Printf("Enter max time to be elapsed: ")
+			var input int
+			fmt.Scan(&input)
+			timeLimit := time.Now()
+			fmt.Println("Time Limit set to: ", timeLimit)
+			for i := 0; i < input; i++ {
+				timeLimit.Add(time.Second)
+			}
+
+			readFiles(root, 0, argMap, timeLimit)
+		} else {
+			readFiles(root, 0, argMap, dummyTime)
+		}
 	}
 }
