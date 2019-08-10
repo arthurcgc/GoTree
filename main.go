@@ -25,8 +25,11 @@ func printTokens(level int, token rune) {
 }
 
 func readFiles(filepath string, level int, argMap map[string]int) {
-	if level > argMap["-max"] {
-		return
+	_, exists := argMap["-max"]
+	if exists {
+		if level > argMap["-max"] {
+			return
+		}
 	}
 	level++
 	files, err := ioutil.ReadDir(filepath)
@@ -44,6 +47,18 @@ func readFiles(filepath string, level int, argMap map[string]int) {
 			} else {
 				str, size := byteConv(int(file.Size()))
 				fmt.Println(" [", size, str, "]")
+			}
+			if file.Mode()&os.ModeSymlink != 0 {
+				var strs []string
+				strs = append(strs, filepath)
+				strs = append(strs, file.Name())
+				fp := strings.Join(strs, "/")
+				realpath, _ := os.Readlink(fp)
+				var err error
+				_, err = ioutil.ReadDir(realpath)
+				if err == nil {
+					readFiles(realpath, level, argMap)
+				}
 			}
 		}
 		if file.IsDir() && !hidden {
