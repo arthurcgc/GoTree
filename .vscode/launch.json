@@ -18,7 +18,7 @@
             "mode": "auto",
             "program": "${fileDirname}",
             "env": {},
-            "args": [".", "-conv", "-time"]
+            "args": [".", "-conv", "-time=10", "-max=10"]
         }
     ]
 }
