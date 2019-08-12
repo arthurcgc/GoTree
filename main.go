@@ -24,7 +24,7 @@ func printTokens(level int, token rune) {
 	}
 }
 
-func readFiles(filepath string, level int, argMap map[string]int) {
+func readFiles(filepath string, level int, argMap map[string]int, doneChannel chan bool) {
 	_, exists := argMap["-max"]
 	if exists {
 		if level > argMap["-max"] {
@@ -57,7 +57,7 @@ func readFiles(filepath string, level int, argMap map[string]int) {
 				var err error
 				_, err = ioutil.ReadDir(realpath)
 				if err == nil {
-					readFiles(realpath, level, argMap)
+					readFiles(realpath, level, argMap, doneChannel)
 				}
 			}
 		}
@@ -66,8 +66,11 @@ func readFiles(filepath string, level int, argMap map[string]int) {
 			strs = append(strs, filepath)
 			strs = append(strs, file.Name())
 			fp := strings.Join(strs, "/")
-			readFiles(fp, level, argMap)
+			readFiles(fp, level, argMap, doneChannel)
 		}
+	}
+	if level == 1 && doneChannel != nil {
+		doneChannel <- true
 	}
 }
 
@@ -139,6 +142,11 @@ func validateArgs(args []string) (map[string]int, error) {
 	return argMap, nil
 }
 
+func sleeping(timeout chan bool, dur int) {
+	time.Sleep(time.Second * time.Duration(dur))
+	timeout <- true
+}
+
 func main() {
 	root := getRoot()
 	args := getArgs(os.Args)
@@ -147,16 +155,22 @@ func main() {
 		panic(err)
 	}
 	if args == nil {
-		readFiles(root, 0, nil)
+		readFiles(root, 0, nil, nil)
 	} else {
 		_, existTime := argMap["-time"]
 		if existTime {
-			start := time.Now()
-			go readFiles(root, 0, argMap)
-			for time.Since(start) <= time.Second*time.Duration(argMap["-time"]) {
+			doneChannel := make(chan bool, 1)
+			timeout := make(chan bool, 1)
+			go readFiles(root, 0, argMap, doneChannel)
+			go sleeping(timeout, argMap["-time"])
+			select {
+			case <-timeout:
+				return
+			case <-doneChannel:
+				return
 			}
 		} else {
-			readFiles(root, 0, argMap)
+			readFiles(root, 0, argMap, nil)
 		}
 	}
 }
