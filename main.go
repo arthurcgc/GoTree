@@ -151,8 +151,10 @@ func main() {
 	} else {
 		_, existTime := argMap["-time"]
 		if existTime {
+			start := time.Now()
 			go readFiles(root, 0, argMap)
-			time.Sleep(time.Second * time.Duration(argMap["-time"]))
+			for time.Since(start) <= time.Second*time.Duration(argMap["-time"]) {
+			}
 		} else {
 			readFiles(root, 0, argMap)
 		}
