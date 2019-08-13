@@ -2,12 +2,12 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -25,9 +25,9 @@ func printTokens(level int, token rune) {
 }
 
 func readFiles(filepath string, level int, argMap map[string]int, doneChannel chan bool) {
-	_, exists := argMap["-max"]
+	_, exists := argMap["max"]
 	if exists {
-		if level > argMap["-max"] {
+		if level > argMap["max"] {
 			return
 		}
 	}
@@ -39,9 +39,9 @@ func readFiles(filepath string, level int, argMap map[string]int, doneChannel ch
 	for _, file := range files {
 		hidden, _ := isHidden(file.Name())
 		if !hidden {
-			printTokens(level+1, '\t')
+			printTokens(level, '\t')
 			fmt.Printf("%s", file.Name())
-			_, exists := argMap["-conv"]
+			_, exists := argMap["human"]
 			if !exists {
 				fmt.Println(" [", file.Size(), "bytes]")
 			} else {
@@ -74,72 +74,60 @@ func readFiles(filepath string, level int, argMap map[string]int, doneChannel ch
 	}
 }
 
-func getArgs(args []string) []string {
-	if len(args) > 2 {
-		args = args[2:]
-		return args
-	}
-
-	return nil
-}
-
 func byteConv(bytes int) (string, float64) {
 	check := float64(bytes) * math.Pow10(-3)
 	if check < 1 {
-		return "bytes", float64(bytes)
+		return "BYTES", float64(bytes)
 	}
 	check = float64(bytes) * math.Pow10(-6)
 	if check < 1 {
-		return "kb", check * math.Pow10(3)
+		return "KiB", check * math.Pow10(3)
 	}
 	check = float64(bytes) * math.Pow10(-9)
 	if check < 1 {
-		return "mb", check * math.Pow10(3)
+		return "MiB", check * math.Pow10(3)
 	}
-	return "gb", check
+	return "GiB", check
 }
 
-func getRoot() string {
-	var root string
-	n := len(os.Args)
-	if n < 2 {
-		root = "."
-	} else {
-		root = os.Args[1]
-	}
-
-	return root
-}
-
-func validateArgs(args []string) (map[string]int, error) {
-	// validArgs := []string{"-conv", "-max", "-time"}
+func validateArgs() (map[string]int, string, error) {
 	argMap := make(map[string]int)
-	for _, arg := range args {
-		matched1, _ := regexp.MatchString(`^-conv`, arg)
-		if matched1 {
-			argMap["-conv"] = 1
+	human := flag.Bool("human", false, "Prints size of files in human form")
+	max := flag.Int("max", -1, "maximum number of levels to go trough")
+	time := flag.Int("time", -1, "Set maximum elapsed time of program in seconds")
+	help := flag.Bool("help", false, "show help")
+	flag.Parse()
+	if *human != false {
+		argMap["human"] = 1
+	}
+	if *help != false {
+		argMap["help"] = 1
+	}
+	if *max != -1 {
+		var err error
+		argMap["max"] = *max
+		if err != nil {
+			panic(err)
 		}
-		matched2, _ := regexp.MatchString(`-max=[0-9]+`, arg)
-		if matched2 {
-			re := regexp.MustCompile(`[0-9]+`)
-			val := re.FindString(arg)
-			// fmt.Println("passed max value is: ", val)
-			argMap["-max"], _ = strconv.Atoi(val)
-		}
-		matched3, _ := regexp.MatchString(`-time=[0-9]+`, arg)
-		if matched3 {
-			re := regexp.MustCompile(`[0-9]+`)
-			val := re.FindString(arg)
-			// fmt.Println("passed time limit is: ", val)
-			argMap["-time"], _ = strconv.Atoi(val)
-		}
-
-		if !matched1 && !matched2 && !matched3 {
-			return nil, errors.New("Invalid Argument(s) passed")
+	}
+	if *time != -1 {
+		var err error
+		argMap["time"] = *time
+		if err != nil {
+			panic(err)
 		}
 	}
 
-	return argMap, nil
+	args := flag.Args()
+	if len(args) > 1 {
+		err := errors.New("Two or more arguments passed, need one")
+		panic(err)
+	}
+
+	if len(args) == 0 {
+		return argMap, ".", nil
+	}
+	return argMap, args[0], nil
 }
 
 func sleeping(timeout chan bool, dur int) {
@@ -148,21 +136,24 @@ func sleeping(timeout chan bool, dur int) {
 }
 
 func main() {
-	root := getRoot()
-	args := getArgs(os.Args)
-	argMap, err := validateArgs(args)
+	argMap, root, err := validateArgs()
 	if err != nil {
 		panic(err)
 	}
-	if args == nil {
+	if len(argMap) == 0 {
 		readFiles(root, 0, nil, nil)
 	} else {
-		_, existTime := argMap["-time"]
-		if existTime {
+		_, existsTime := argMap["time"]
+		_, help := argMap["help"]
+		if help {
+			printHelp()
+			return
+		}
+		if existsTime {
 			doneChannel := make(chan bool, 1)
 			timeout := make(chan bool, 1)
 			go readFiles(root, 0, argMap, doneChannel)
-			go sleeping(timeout, argMap["-time"])
+			go sleeping(timeout, argMap["time"])
 			select {
 			case <-timeout:
 				return
@@ -173,4 +164,10 @@ func main() {
 			readFiles(root, 0, argMap, nil)
 		}
 	}
+}
+
+func printHelp() {
+	fmt.Println("human -> display file size in human form")
+	fmt.Println("-time -> set maximun time in seconds")
+	fmt.Println("-max -> set maximun level of directories")
 }
