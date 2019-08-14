@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"./cli"
-	"./printer"
+	"github.com/arthurcgc/GoTree/cli"
+	"github.com/arthurcgc/GoTree/printer"
 )
 
 // regex function to check if given file is hidden
