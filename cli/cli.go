@@ -51,3 +51,13 @@ func NewArgs() Args {
 	args.Root = listArgs[0]
 	return args
 }
+
+func (args *Args) ExistsTime() bool {
+	_, existsTime := args.ArgMap["time"]
+	return existsTime
+}
+
+func (args *Args) HelpFlag() bool {
+	_, existsHelp := args.ArgMap["help"]
+	return existsHelp
+}
