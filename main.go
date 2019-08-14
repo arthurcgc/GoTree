@@ -41,7 +41,8 @@ func readFiles(filepath string, level int, argMap map[string]int, doneChannel ch
 		permission := file.Mode()
 		if permission&(1<<2) == 0 {
 			hidden = true
-			// fmt.Println("User does not have permission to read ", file.Name())
+			fmt.Println("User does not have permission to read:", file.Name())
+			// doneChannel <- true
 		}
 		if !hidden {
 			printTokens(level, '\t')
