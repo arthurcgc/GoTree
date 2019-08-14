@@ -81,6 +81,19 @@ func sleeping(timeout chan bool, dur int) {
 	timeout <- true
 }
 
+func startTimer(args cli.Args) {
+	doneChannel := make(chan bool, 1)
+	timeout := make(chan bool, 1)
+	go readFiles(args.Root, 0, args.ArgMap, doneChannel)
+	go sleeping(timeout, args.ArgMap["time"])
+	select {
+	case <-timeout:
+		return
+	case <-doneChannel:
+		return
+	}
+}
+
 func main() {
 	args := cli.NewArgs()
 	if len(args.ArgMap) == 0 {
@@ -91,16 +104,7 @@ func main() {
 			return
 		}
 		if args.ExistsTime() {
-			doneChannel := make(chan bool, 1)
-			timeout := make(chan bool, 1)
-			go readFiles(args.Root, 0, args.ArgMap, doneChannel)
-			go sleeping(timeout, args.ArgMap["time"])
-			select {
-			case <-timeout:
-				return
-			case <-doneChannel:
-				return
-			}
+			startTimer(args)
 		} else {
 			readFiles(args.Root, 0, args.ArgMap, nil)
 		}
