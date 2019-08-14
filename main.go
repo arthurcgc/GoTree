@@ -116,11 +116,8 @@ func sleeping(timeout chan bool, dur int) {
 
 func main() {
 	args := cli.NewArgs()
-	if err != nil {
-		panic(err)
-	}
-	if len(args.ArgMap()) == 0 {
-		readFiles(root, 0, nil, nil)
+	if len(args.ArgMap) == 0 {
+		readFiles(args.Root, 0, nil, nil)
 	} else {
 		_, existsTime := args.ArgMap["time"]
 		_, help := args.ArgMap["help"]

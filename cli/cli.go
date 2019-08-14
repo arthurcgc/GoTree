@@ -7,7 +7,7 @@ import (
 
 type Args struct {
 	ArgMap map[string]int
-	root   string
+	Root   string
 }
 
 func NewArgs() Args {
