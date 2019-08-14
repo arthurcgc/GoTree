@@ -1,8 +1,6 @@
 package main
 
 import (
-	"errors"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -10,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/arthurcgc/GoTree/cli"
 )
 
 // regex function to check if given file is hidden
@@ -22,6 +22,38 @@ func printTokens(level int, token rune) {
 	for i := 0; i < level; i++ {
 		fmt.Printf("%c", token)
 	}
+}
+
+func printFileInfo(file os.FileInfo, argMap map[string]int) {
+	fmt.Printf("%s", file.Name())
+	_, exists := argMap["human"]
+	if !exists {
+		fmt.Println(" [", file.Size(), "bytes]")
+	} else {
+		str, size := byteConv(int(file.Size()))
+		fmt.Println(" [", size, str, "]")
+	}
+}
+
+func buildPath(path, filename string) string {
+	var strs []string
+	strs = append(strs, path)
+	strs = append(strs, filename)
+	fp := strings.Join(strs, "/")
+	return fp
+}
+
+func shouldFollowSymlink(file os.FileInfo, filepath string) (bool, string) {
+	if file.Mode()&os.ModeSymlink != 0 {
+		fp := buildPath(filepath, file.Name())
+		realpath, _ := os.Readlink(fp)
+		var err error
+		_, err = ioutil.ReadDir(realpath)
+		if err == nil {
+			return true, realpath
+		}
+	}
+	return false, ""
 }
 
 func readFiles(filepath string, level int, argMap map[string]int, doneChannel chan bool) {
@@ -42,36 +74,17 @@ func readFiles(filepath string, level int, argMap map[string]int, doneChannel ch
 		if permission&(1<<2) == 0 {
 			hidden = true
 			fmt.Println("User does not have permission to read:", file.Name())
-			// doneChannel <- true
 		}
 		if !hidden {
 			printTokens(level, '\t')
-			fmt.Printf("%s", file.Name())
-			_, exists := argMap["human"]
-			if !exists {
-				fmt.Println(" [", file.Size(), "bytes]")
-			} else {
-				str, size := byteConv(int(file.Size()))
-				fmt.Println(" [", size, str, "]")
-			}
-			if file.Mode()&os.ModeSymlink != 0 {
-				var strs []string
-				strs = append(strs, filepath)
-				strs = append(strs, file.Name())
-				fp := strings.Join(strs, "/")
-				realpath, _ := os.Readlink(fp)
-				var err error
-				_, err = ioutil.ReadDir(realpath)
-				if err == nil {
-					readFiles(realpath, level, argMap, doneChannel)
-				}
+			printFileInfo(file, argMap)
+			shouldFollow, realpath := shouldFollowSymlink(file, filepath)
+			if shouldFollow {
+				readFiles(realpath, level, argMap, doneChannel)
 			}
 		}
 		if file.IsDir() && !hidden {
-			var strs []string
-			strs = append(strs, filepath)
-			strs = append(strs, file.Name())
-			fp := strings.Join(strs, "/")
+			fp := buildPath(filepath, file.Name())
 			readFiles(fp, level, argMap, doneChannel)
 		}
 	}
@@ -96,61 +109,21 @@ func byteConv(bytes int) (string, float64) {
 	return "GiB", check
 }
 
-func validateArgs() (map[string]int, string, error) {
-	argMap := make(map[string]int)
-	human := flag.Bool("human", false, "Prints size of files in human form")
-	max := flag.Int("max", -1, "maximum number of levels to go trough")
-	time := flag.Int("time", -1, "Set maximum elapsed time of program in seconds")
-	help := flag.Bool("help", false, "show help")
-	flag.Parse()
-	if *human != false {
-		argMap["human"] = 1
-	}
-	if *help != false {
-		argMap["help"] = 1
-	}
-	if *max != -1 {
-		var err error
-		argMap["max"] = *max
-		if err != nil {
-			panic(err)
-		}
-	}
-	if *time != -1 {
-		var err error
-		argMap["time"] = *time
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	args := flag.Args()
-	if len(args) > 1 {
-		err := errors.New("Two or more arguments passed, need one")
-		panic(err)
-	}
-
-	if len(args) == 0 {
-		return argMap, ".", nil
-	}
-	return argMap, args[0], nil
-}
-
 func sleeping(timeout chan bool, dur int) {
 	time.Sleep(time.Second * time.Duration(dur))
 	timeout <- true
 }
 
 func main() {
-	argMap, root, err := validateArgs()
+	args := cli.NewArgs()
 	if err != nil {
 		panic(err)
 	}
-	if len(argMap) == 0 {
+	if len(args.ArgMap()) == 0 {
 		readFiles(root, 0, nil, nil)
 	} else {
-		_, existsTime := argMap["time"]
-		_, help := argMap["help"]
+		_, existsTime := args.ArgMap["time"]
+		_, help := args.ArgMap["help"]
 		if help {
 			printHelp()
 			return
@@ -158,8 +131,8 @@ func main() {
 		if existsTime {
 			doneChannel := make(chan bool, 1)
 			timeout := make(chan bool, 1)
-			go readFiles(root, 0, argMap, doneChannel)
-			go sleeping(timeout, argMap["time"])
+			go readFiles(root, 0, args.ArgMap, doneChannel)
+			go sleeping(timeout, args.ArgMap["time"])
 			select {
 			case <-timeout:
 				return
@@ -167,7 +140,7 @@ func main() {
 				return
 			}
 		} else {
-			readFiles(root, 0, argMap, nil)
+			readFiles(root, 0, args.ArgMap, nil)
 		}
 	}
 }
