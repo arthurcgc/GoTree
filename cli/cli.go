@@ -45,9 +45,9 @@ func NewArgs() Args {
 		panic(err)
 	}
 	if len(listArgs) == 0 {
-		args.root = "."
+		args.Root = "."
 		return args
 	}
-	args.root = listArgs[0]
+	args.Root = listArgs[0]
 	return args
 }
