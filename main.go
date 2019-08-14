@@ -128,7 +128,7 @@ func main() {
 		if existsTime {
 			doneChannel := make(chan bool, 1)
 			timeout := make(chan bool, 1)
-			go readFiles(root, 0, args.ArgMap, doneChannel)
+			go readFiles(args.Root, 0, args.ArgMap, doneChannel)
 			go sleeping(timeout, args.ArgMap["time"])
 			select {
 			case <-timeout:
@@ -137,7 +137,7 @@ func main() {
 				return
 			}
 		} else {
-			readFiles(root, 0, args.ArgMap, nil)
+			readFiles(args.Root, 0, args.ArgMap, nil)
 		}
 	}
 }
