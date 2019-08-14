@@ -38,6 +38,10 @@ func readFiles(filepath string, level int, argMap map[string]int, doneChannel ch
 	}
 	for _, file := range files {
 		hidden, _ := isHidden(file.Name())
+		permission := file.Mode()
+		if permission&(1<<2) == 0 {
+			hidden = true
+		}
 		if !hidden {
 			printTokens(level, '\t')
 			fmt.Printf("%s", file.Name())
@@ -167,7 +171,7 @@ func main() {
 }
 
 func printHelp() {
-	fmt.Println("human -> display file size in human form")
-	fmt.Println("-time -> set maximun time in seconds")
-	fmt.Println("-max -> set maximun level of directories")
+	fmt.Println("-human \t display file size in human form")
+	fmt.Println("-time=[int] \t set maximun time in seconds")
+	fmt.Println("-max=[int] \t set maximun level of directories")
 }
