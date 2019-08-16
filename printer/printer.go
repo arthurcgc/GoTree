@@ -30,6 +30,7 @@ func PrintTokens(level int, token rune) {
 
 func PrintFileInfo(file os.FileInfo, argMap map[string]int) {
 	fmt.Printf("%s", file.Name())
+
 	_, exists := argMap["human"]
 	if !exists {
 		fmt.Println(" [", file.Size(), "bytes]")
@@ -37,10 +38,4 @@ func PrintFileInfo(file os.FileInfo, argMap map[string]int) {
 		str, size := byteConv(int(file.Size()))
 		fmt.Println(" [", size, str, "]")
 	}
-}
-
-func PrintHelp() {
-	fmt.Println("-human \t display file size in human form")
-	fmt.Println("-time=[int] \t set maximun time in seconds")
-	fmt.Println("-max=[int] \t set maximun level of directories")
 }

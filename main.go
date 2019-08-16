@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/arthurcgc/GoTree/cli"
@@ -26,87 +27,116 @@ func getBuildPath(path, filename string) string {
 	return fp
 }
 
-func shouldFollowSymlink(file os.FileInfo, filepath string) (bool, string) {
-	if file.Mode()&os.ModeSymlink != 0 {
-		fp := getBuildPath(filepath, file.Name())
-		realpath, _ := os.Readlink(fp)
-		var err error
-		_, err = ioutil.ReadDir(realpath)
-		if err == nil {
-			return true, realpath
-		}
+func shouldFollowSymlink(file os.FileInfo, filepath string) (bool, string, error) {
+	if file.Mode()&os.ModeSymlink == 0 {
+		return false, "", nil
 	}
-	return false, ""
+	fp := getBuildPath(filepath, file.Name())
+	realpath, err := os.Readlink(fp)
+	if err != nil {
+		return false, "", err
+	}
+	_, err = ioutil.ReadDir(realpath)
+	if err != nil {
+		return false, realpath, nil
+	}
+	return true, realpath, nil
 }
 
-func readFiles(filepath string, level int, argMap map[string]int, doneChannel chan bool) {
-	_, exists := argMap["max"]
-	if exists {
-		if level > argMap["max"] {
-			return
-		}
+func hasPermission(mode uint32) bool {
+	others := uint32(1 << 2)
+	group := uint32(1 << 5)
+	user := uint32(1 << 8)
+
+	if (mode&others) != 0 || (mode&group) != 0 || (mode&user) != 0 {
+		return true
+	}
+	return false
+}
+
+var timeout bool
+
+func readFiles(filepath string, level int, argMap map[string]int, light *sync.Mutex) error {
+	if timeout {
+		return nil
+	}
+	if _, exists := argMap["max"]; exists && level >= argMap["max"] {
+		return nil
 	}
 	level++
 	files, err := ioutil.ReadDir(filepath)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	for _, file := range files {
-		hidden, _ := isHidden(file.Name())
-		permission := file.Mode()
-		if permission&(1<<2) == 0 {
-			hidden = true
+		ignore, err := isHidden(file.Name())
+		if timeout {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !hasPermission(uint32(file.Mode())) {
+			ignore = true
 			fmt.Println("User does not have permission to read:", file.Name())
 		}
-		if !hidden {
-			printer.PrintTokens(level, '\t')
-			printer.PrintFileInfo(file, argMap)
-			shouldFollow, realpath := shouldFollowSymlink(file, filepath)
-			if shouldFollow {
-				readFiles(realpath, level, argMap, doneChannel)
-			}
+		if ignore {
+			continue
 		}
-		if file.IsDir() && !hidden {
+		printer.PrintTokens(level, '\t')
+		printer.PrintFileInfo(file, argMap)
+		shouldFollow, realpath, err := shouldFollowSymlink(file, filepath)
+		if err != nil {
+			return err
+		}
+		if shouldFollow {
+			readFiles(realpath, level, argMap, light)
+		}
+		if file.IsDir() && !shouldFollow {
 			fp := getBuildPath(filepath, file.Name())
-			readFiles(fp, level, argMap, doneChannel)
+			readFiles(fp, level, argMap, light)
 		}
 	}
-	if level == 1 && doneChannel != nil {
-		doneChannel <- true
+
+	if level == 1 && light != nil {
+		light.Lock()
+		defer func() {
+			light.Unlock()
+		}()
+		timeout = true
+		return nil
 	}
+	return nil
 }
 
-func sleeping(timeout chan bool, dur int) {
-	time.Sleep(time.Second * time.Duration(dur))
-	timeout <- true
-}
-
-func startTimer(args cli.Args) {
-	doneChannel := make(chan bool, 1)
-	timeout := make(chan bool, 1)
-	go readFiles(args.Root, 0, args.ArgMap, doneChannel)
-	go sleeping(timeout, args.ArgMap["time"])
-	select {
-	case <-timeout:
-		return
-	case <-doneChannel:
-		return
+func sleeping(dur int, light *sync.Mutex) {
+	seconds := time.Duration(dur) * time.Second
+	expire := time.Now().Add(seconds)
+	for {
+		if timeout {
+			fmt.Printf("Read Files took: %v seconds to parse files", expire.Sub(time.Now()))
+			return
+		}
+		if time.Now().After(expire) {
+			light.Lock()
+			defer func() {
+				light.Unlock()
+				fmt.Printf("Program timed out!\n")
+			}()
+			timeout = true
+			return
+		}
 	}
 }
 
 func main() {
 	args := cli.NewArgs()
-	if len(args.ArgMap) == 0 {
-		readFiles(args.Root, 0, nil, nil)
+	if args.ExistsTime() {
+		var light = sync.Mutex{}
+		go sleeping(args.ArgMap["time"], &light)
+		readFiles(args.Root, 0, args.ArgMap, &light)
 	} else {
-		if args.HelpFlag() {
-			printer.PrintHelp()
-			return
-		}
-		if args.ExistsTime() {
-			startTimer(args)
-		} else {
-			readFiles(args.Root, 0, args.ArgMap, nil)
-		}
+		readFiles(args.Root, 0, args.ArgMap, nil)
 	}
+
 }
