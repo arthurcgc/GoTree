@@ -6,11 +6,11 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/arthurcgc/GoTree/cli"
 	"github.com/arthurcgc/GoTree/printer"
+	"github.com/arthurcgc/GoTree/timedEvent"
 )
 
 // regex function to check if given file is hidden
@@ -54,26 +54,43 @@ func hasPermission(mode uint32) bool {
 	return false
 }
 
-var timeout bool
+func checkError(tEvent *timedEvent.TimedEvent, err error) error {
+	if err != nil {
+		if tEvent != nil {
+			tEvent.Finished <- true
+		}
+		return err
+	}
+	return nil
+}
 
-func readFiles(filepath string, level int, argMap map[string]int, light *sync.Mutex) error {
-	if timeout {
+type dir struct {
+	filepath string
+	level    int
+}
+
+func readFiles(root dir, argMap map[string]int, retCond *bool, tEvent *timedEvent.TimedEvent) error {
+	filepath := root.filepath
+	level := root.level
+	if *retCond {
 		return nil
 	}
 	if _, exists := argMap["max"]; exists && level >= argMap["max"] {
+		*retCond = true
 		return nil
 	}
 	level++
 	files, err := ioutil.ReadDir(filepath)
-	if err != nil {
+	if checkError(tEvent, err) != nil {
 		return err
 	}
 	for _, file := range files {
 		ignore, err := isHidden(file.Name())
-		if timeout {
+		if tEvent != nil && tEvent.CheckReceiveSignalNoHang() && !*retCond {
+			*retCond = true
 			return nil
 		}
-		if err != nil {
+		if checkError(tEvent, err) != nil {
 			return err
 		}
 		if !hasPermission(uint32(file.Mode())) {
@@ -86,44 +103,53 @@ func readFiles(filepath string, level int, argMap map[string]int, light *sync.Mu
 		printer.PrintTokens(level, '\t')
 		printer.PrintFileInfo(file, argMap)
 		shouldFollow, realpath, err := shouldFollowSymlink(file, filepath)
-		if err != nil {
+		if checkError(tEvent, err) != nil {
 			return err
 		}
 		if shouldFollow {
-			readFiles(realpath, level, argMap, light)
+			newroot := dir{filepath: realpath, level: level}
+			err = readFiles(newroot, argMap, retCond, tEvent)
+			if *retCond {
+				return nil
+			}
+			if checkError(tEvent, err) != nil {
+				return err
+			}
+			continue
 		}
-		if file.IsDir() && !shouldFollow {
+		if file.IsDir() {
 			fp := getBuildPath(filepath, file.Name())
-			readFiles(fp, level, argMap, light)
+			newroot := dir{filepath: fp, level: level}
+			err = readFiles(newroot, argMap, retCond, tEvent)
+			if *retCond {
+				return nil
+			}
+			if checkError(tEvent, err) != nil {
+				return err
+			}
 		}
 	}
 
-	if level == 1 && light != nil {
-		light.Lock()
-		defer func() {
-			light.Unlock()
-		}()
-		timeout = true
-		return nil
+	if level == 1 && tEvent != nil {
+		tEvent.TurnSwitch(tEvent.Finished, tEvent.Light)
+		*retCond = true
 	}
 	return nil
 }
 
-func sleeping(dur int, light *sync.Mutex) {
+func sleeping(dur int, tEvent *timedEvent.TimedEvent) {
 	seconds := time.Duration(dur) * time.Second
-	expire := time.Now().Add(seconds)
-	for {
-		if timeout {
-			fmt.Printf("Read Files took: %v seconds to parse files", expire.Sub(time.Now()))
+	select {
+	case <-tEvent.Finished:
+		{
+			tEvent.Wg.Done()
 			return
 		}
-		if time.Now().After(expire) {
-			light.Lock()
-			defer func() {
-				light.Unlock()
-				fmt.Printf("Program timed out!\n")
-			}()
-			timeout = true
+	case <-time.After(seconds):
+		{
+			fmt.Printf("\nProgram timed out!\n")
+			tEvent.TurnSwitch(tEvent.Finished, tEvent.Light)
+			tEvent.Wg.Done()
 			return
 		}
 	}
@@ -131,12 +157,15 @@ func sleeping(dur int, light *sync.Mutex) {
 
 func main() {
 	args := cli.NewArgs()
+	root := dir{filepath: args.Root, level: 0}
+	var retCond bool
 	if args.ExistsTime() {
-		var light = sync.Mutex{}
-		go sleeping(args.ArgMap["time"], &light)
-		readFiles(args.Root, 0, args.ArgMap, &light)
+		tEvent := timedEvent.NewTimedEvent()
+		tEvent.Wg.Add(1)
+		go sleeping(args.ArgMap["time"], tEvent)
+		readFiles(root, args.ArgMap, &retCond, tEvent)
+		tEvent.Wg.Wait()
 	} else {
-		readFiles(args.Root, 0, args.ArgMap, nil)
+		readFiles(root, args.ArgMap, &retCond, nil)
 	}
-
 }
