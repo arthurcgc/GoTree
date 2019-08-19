@@ -35,7 +35,7 @@ func (t *TimedEvent) CheckReceiveSignalNoHang() bool {
 	}
 }
 
-func (t *TimedEvent) TurnSwitch(finished chan bool, light *sync.Mutex) {
+func (t *TimedEvent) ChanSwitch(finished chan bool, light *sync.Mutex) {
 	t.Light.Lock()
 	t.Finished <- true
 	t.Light.Unlock()

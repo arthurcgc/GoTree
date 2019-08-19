@@ -86,7 +86,7 @@ func readFiles(root dir, argMap map[string]int, retCond *bool, tEvent *timedEven
 	}
 	for _, file := range files {
 		ignore, err := isHidden(file.Name())
-		if tEvent != nil && tEvent.CheckReceiveSignalNoHang() && !*retCond {
+		if tEvent != nil && tEvent.CheckReceiveSignalNoHang() {
 			*retCond = true
 			return nil
 		}
@@ -109,11 +109,11 @@ func readFiles(root dir, argMap map[string]int, retCond *bool, tEvent *timedEven
 		if shouldFollow {
 			newroot := dir{filepath: realpath, level: level}
 			err = readFiles(newroot, argMap, retCond, tEvent)
-			if *retCond {
-				return nil
-			}
 			if checkError(tEvent, err) != nil {
 				return err
+			}
+			if *retCond {
+				return nil
 			}
 			continue
 		}
@@ -121,17 +121,17 @@ func readFiles(root dir, argMap map[string]int, retCond *bool, tEvent *timedEven
 			fp := getBuildPath(filepath, file.Name())
 			newroot := dir{filepath: fp, level: level}
 			err = readFiles(newroot, argMap, retCond, tEvent)
-			if *retCond {
-				return nil
-			}
 			if checkError(tEvent, err) != nil {
 				return err
+			}
+			if *retCond {
+				return nil
 			}
 		}
 	}
 
 	if level == 1 && tEvent != nil {
-		tEvent.TurnSwitch(tEvent.Finished, tEvent.Light)
+		tEvent.ChanSwitch(tEvent.Finished, tEvent.Light)
 		*retCond = true
 	}
 	return nil
