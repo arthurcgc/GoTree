@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	"../timedEvent"
 	"github.com/arthurcgc/GoTree/printer"
+	"github.com/arthurcgc/GoTree/timedEvent"
 )
 
 type dir struct {
