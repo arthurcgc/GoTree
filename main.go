@@ -67,31 +67,35 @@ func checkError(tEvent *timedEvent.TimedEvent, err error) error {
 type dir struct {
 	filepath string
 	level    int
+	visited  bool
 }
 
-func readFiles(root dir, argMap map[string]int, retCond *bool, tEvent *timedEvent.TimedEvent) error {
-	filepath := root.filepath
-	level := root.level
-	if *retCond {
-		return nil
-	}
-	if _, exists := argMap["max"]; exists && level >= argMap["max"] {
-		*retCond = true
-		return nil
-	}
-	level++
-	files, err := ioutil.ReadDir(filepath)
+func getFileList(root *dir, tEvent *timedEvent.TimedEvent) ([]os.FileInfo, error) {
+	root.level++
+	files, err := ioutil.ReadDir(root.filepath)
 	if checkError(tEvent, err) != nil {
-		return err
+		return nil, err
+	}
+	root.visited = true
+
+	return files, nil
+}
+
+func readFiles(root dir, argMap map[string]int, tEvent *timedEvent.TimedEvent) (bool, error) {
+	if _, exists := argMap["max"]; exists && root.level >= argMap["max"] {
+		return true, nil
+	}
+	files, err := getFileList(&root, tEvent)
+	if err != nil {
+		return true, err
 	}
 	for _, file := range files {
 		ignore, err := isHidden(file.Name())
 		if tEvent != nil && tEvent.CheckReceiveSignalNoHang() {
-			*retCond = true
-			return nil
+			return true, nil
 		}
 		if checkError(tEvent, err) != nil {
-			return err
+			return false, err
 		}
 		if !hasPermission(uint32(file.Mode())) {
 			ignore = true
@@ -100,41 +104,43 @@ func readFiles(root dir, argMap map[string]int, retCond *bool, tEvent *timedEven
 		if ignore {
 			continue
 		}
-		printer.PrintTokens(level, '\t')
+		printer.PrintTokens(root.level, '\t')
 		printer.PrintFileInfo(file, argMap)
-		shouldFollow, realpath, err := shouldFollowSymlink(file, filepath)
+		shouldFollow, realpath, err := shouldFollowSymlink(file, root.filepath)
 		if checkError(tEvent, err) != nil {
-			return err
+			return false, err
 		}
 		if shouldFollow {
-			newroot := dir{filepath: realpath, level: level}
-			err = readFiles(newroot, argMap, retCond, tEvent)
+			newroot := dir{filepath: realpath, level: root.level, visited: false}
+			var breakLoop bool
+			breakLoop, err = readFiles(newroot, argMap, tEvent)
 			if checkError(tEvent, err) != nil {
-				return err
+				return false, err
 			}
-			if *retCond {
-				return nil
+			if breakLoop {
+				return true, nil
 			}
 			continue
 		}
 		if file.IsDir() {
-			fp := getBuildPath(filepath, file.Name())
-			newroot := dir{filepath: fp, level: level}
-			err = readFiles(newroot, argMap, retCond, tEvent)
+			fp := getBuildPath(root.filepath, file.Name())
+			newroot := dir{filepath: fp, level: root.level, visited: false}
+			var breakLoop bool
+			breakLoop, err = readFiles(newroot, argMap, tEvent)
 			if checkError(tEvent, err) != nil {
-				return err
+				return false, err
 			}
-			if *retCond {
-				return nil
+			if breakLoop {
+				return true, nil
 			}
 		}
 	}
 
-	if level == 1 && tEvent != nil {
+	if root.level == 1 && tEvent != nil {
 		tEvent.ChanSwitch(tEvent.Finished, tEvent.Light)
-		*retCond = true
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
 func sleeping(dur int, tEvent *timedEvent.TimedEvent) {
@@ -148,7 +154,7 @@ func sleeping(dur int, tEvent *timedEvent.TimedEvent) {
 	case <-time.After(seconds):
 		{
 			fmt.Printf("\nProgram timed out!\n")
-			tEvent.TurnSwitch(tEvent.Finished, tEvent.Light)
+			tEvent.ChanSwitch(tEvent.Finished, tEvent.Light)
 			tEvent.Wg.Done()
 			return
 		}
@@ -157,15 +163,14 @@ func sleeping(dur int, tEvent *timedEvent.TimedEvent) {
 
 func main() {
 	args := cli.NewArgs()
-	root := dir{filepath: args.Root, level: 0}
-	var retCond bool
+	root := dir{filepath: args.Root, level: 0, visited: false}
 	if args.ExistsTime() {
 		tEvent := timedEvent.NewTimedEvent()
 		tEvent.Wg.Add(1)
 		go sleeping(args.ArgMap["time"], tEvent)
-		readFiles(root, args.ArgMap, &retCond, tEvent)
+		readFiles(root, args.ArgMap, tEvent)
 		tEvent.Wg.Wait()
 	} else {
-		readFiles(root, args.ArgMap, &retCond, nil)
+		readFiles(root, args.ArgMap, nil)
 	}
 }
