@@ -1,6 +1,10 @@
 package timedEvent
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+	"time"
+)
 
 type TimedEvent struct {
 	Light    *sync.Mutex
@@ -35,7 +39,25 @@ func (t *TimedEvent) CheckReceiveSignalNoHang() bool {
 	}
 }
 
-func (t *TimedEvent) ChanSwitch(finished chan bool, light *sync.Mutex) {
+func (t *TimedEvent) Sleeping(dur int) {
+	seconds := time.Duration(dur) * time.Second
+	select {
+	case <-t.Finished:
+		{
+			t.Wg.Done()
+			return
+		}
+	case <-time.After(seconds):
+		{
+			fmt.Printf("\nProgram timed out!\n")
+			t.ChanSwitch()
+			t.Wg.Done()
+			return
+		}
+	}
+}
+
+func (t *TimedEvent) ChanSwitch() {
 	t.Light.Lock()
 	t.Finished <- true
 	t.Light.Unlock()
